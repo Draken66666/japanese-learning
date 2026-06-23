@@ -8,15 +8,13 @@ import { useAuth } from '@/context/AuthContext';
 export default function PaymentSuccessPage() {
   const navigate = useNavigate();
   const { refreshUser } = useAuth();
-  const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
+  const [status, setStatus] = useState<'loading' | 'success'>('loading');
 
   useEffect(() => {
-    // Refresh user data to get updated premium status
     const timer = setTimeout(async () => {
       await refreshUser();
       setStatus('success');
     }, 1500);
-
     return () => clearTimeout(timer);
   }, [refreshUser]);
 
@@ -25,7 +23,7 @@ export default function PaymentSuccessPage() {
       {status === 'loading' && (
         <div className="text-center">
           <Loader2 className="h-12 w-12 animate-spin text-primary mx-auto mb-4" />
-          <p className="text-gray-600">正在确认支付状态...</p>
+          <p className="text-gray-600">正在确认...</p>
         </div>
       )}
 
@@ -33,7 +31,7 @@ export default function PaymentSuccessPage() {
         <Card className="border-green-200 bg-green-50">
           <CardContent className="pt-6 text-center space-y-4">
             <CheckCircle className="h-16 w-16 text-green-600 mx-auto" />
-            <h1 className="text-2xl font-bold text-green-800">支付成功！</h1>
+            <h1 className="text-2xl font-bold text-green-800">激活成功！</h1>
             <p className="text-gray-600">
               恭喜您成为永久会员！现在可以访问全部 8000+ 词汇了。
             </p>

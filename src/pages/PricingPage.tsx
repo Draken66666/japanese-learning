@@ -1,88 +1,48 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription
-} from '@/components/ui/dialog';
-import { Check, Crown, Sparkles, QrCode, Loader2 } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Check, Crown, Sparkles, KeyRound, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/services/api';
 
 export default function PricingPage() {
   const { user, refreshUser } = useAuth();
-  const [processing, setProcessing] = useState<string | null>(null);
-  const [paymentDialog, setPaymentDialog] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState<'wechat' | 'alipay'>('wechat');
-  const [orderInfo, setOrderInfo] = useState<any>(null);
-  const [confirming, setConfirming] = useState(false);
-  const [paymentConfig, setPaymentConfig] = useState<any>(null);
+  const [activationCode, setActivationCode] = useState('');
+  const [activating, setActivating] = useState(false);
   const navigate = useNavigate();
 
-  useEffect(() => {
-    api.getPaymentConfig().then(data => setPaymentConfig(data)).catch(() => {});
-  }, []);
-
-  const handlePurchase = async (method: 'wechat' | 'alipay') => {
+  const handleActivate = async () => {
     if (!user) {
       toast.error('请先登录');
       navigate('/login');
       return;
     }
 
-    if (user.is_premium) {
-      toast.success('您已是永久会员！');
+    if (!activationCode.trim()) {
+      toast.error('请输入激活码');
       return;
     }
 
-    setPaymentMethod(method);
-    setProcessing(method);
-
+    setActivating(true);
     try {
-      const data = await api.createPaymentOrder(method);
-
-      if (data.error === 'ALREADY_PREMIUM') {
-        toast.success('您已是永久会员！');
-        return;
-      }
-
-      if (data.success) {
-        setOrderInfo(data);
-        setPaymentDialog(true);
-      } else {
-        toast.error(data.message || '创建订单失败');
-      }
-    } catch (error) {
-      toast.error('支付处理失败，请稍后重试');
-    } finally {
-      setProcessing(null);
-    }
-  };
-
-  const handleConfirmPayment = async () => {
-    if (!orderInfo) return;
-
-    setConfirming(true);
-    try {
-      const data = await api.confirmPayment(orderInfo.orderId, paymentMethod);
-
-      if (data.success && data.is_premium) {
-        toast.success('支付成功！已为您激活永久会员！');
-        setPaymentDialog(false);
-        await refreshUser?.();
+      const result = await api.activateWithCode(activationCode);
+      if (result.success) {
+        toast.success(result.message);
+        await refreshUser();
+        setActivationCode('');
         navigate('/dashboard');
-      } else if (data.success && data.status === 'pending_verification') {
-        toast.success(data.message || '支付确认已提交，请等待审核');
-        setPaymentDialog(false);
       } else {
-        toast.error(data.message || '支付确认失败');
+        toast.error(result.message);
       }
     } catch (error) {
       toast.error('操作失败，请稍后重试');
     } finally {
-      setConfirming(false);
+      setActivating(false);
     }
   };
 
@@ -151,34 +111,47 @@ export default function PricingPage() {
           </CardContent>
 
           {!user?.is_premium && (
-            <CardFooter className="flex-col gap-3">
-              <div className="w-full text-center text-sm text-gray-500 mb-2">选择支付方式</div>
-              <div className="grid grid-cols-2 gap-3 w-full">
-                <Button
-                  className="w-full bg-green-600 hover:bg-green-700"
-                  onClick={() => handlePurchase('wechat')}
-                  disabled={processing !== null}
-                >
-                  {processing === 'wechat' ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <span className="mr-2">💚</span>
-                  )}
-                  微信支付
-                </Button>
-                <Button
-                  className="w-full bg-blue-500 hover:bg-blue-600"
-                  onClick={() => handlePurchase('alipay')}
-                  disabled={processing !== null}
-                >
-                  {processing === 'alipay' ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <span className="mr-2">💙</span>
-                  )}
-                  支付宝
-                </Button>
+            <CardFooter className="flex-col gap-4">
+              {/* 购买说明 */}
+              <div className="w-full bg-blue-50 border border-blue-100 rounded-lg p-4 text-sm text-blue-700 space-y-2">
+                <p className="font-semibold flex items-center gap-1">
+                  <KeyRound className="h-4 w-4" />
+                  如何获取激活码：
+                </p>
+                <p>1. 微信扫码支付 ¥{plan.price}（添加客服微信）</p>
+                <p>2. 支付后获取激活码</p>
+                <p>3. 在下方输入激活码解锁全部词汇</p>
               </div>
+
+              {/* 激活码输入 */}
+              <div className="w-full space-y-2">
+                <Label htmlFor="code">输入激活码</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="code"
+                    placeholder="请输入激活码..."
+                    value={activationCode}
+                    onChange={(e) => setActivationCode(e.target.value)}
+                    className="flex-1"
+                  />
+                  <Button
+                    onClick={handleActivate}
+                    disabled={activating}
+                    className="button-hover-effect button-click-effect"
+                  >
+                    {activating ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <KeyRound className="mr-2 h-4 w-4" />
+                    )}
+                    激活
+                  </Button>
+                </div>
+              </div>
+
+              <p className="text-xs text-gray-400 text-center">
+                支付后请联系客服获取激活码，输入后立即解锁
+              </p>
             </CardFooter>
           )}
         </Card>
@@ -233,15 +206,15 @@ export default function PricingPage() {
           </CardContent>
         </Card>
         <Card>
-          <CardHeader><CardTitle className="text-base">支付安全吗？</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-base">如何购买？</CardTitle></CardHeader>
           <CardContent>
-            <p className="text-gray-600 text-sm">我们使用微信支付和支付宝进行收款，支付过程在官方平台完成，确保您的资金安全。</p>
+            <p className="text-gray-600 text-sm">通过微信或支付宝扫码支付 ¥{plan.price}，支付后联系客服获取激活码。在定价页输入激活码即可立即解锁全部内容。</p>
           </CardContent>
         </Card>
         <Card>
-          <CardHeader><CardTitle className="text-base">如何激活会员？</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-base">激活码怎么用？</CardTitle></CardHeader>
           <CardContent>
-            <p className="text-gray-600 text-sm">选择微信或支付宝扫码支付后，点击"我已支付"按钮即可。系统会在确认后自动为您激活永久会员。</p>
+            <p className="text-gray-600 text-sm">注册登录后，在定价页输入激活码，点击"激活"按钮即可。激活后永久有效，无需重复输入。</p>
           </CardContent>
         </Card>
         <Card>
@@ -251,82 +224,6 @@ export default function PricingPage() {
           </CardContent>
         </Card>
       </div>
-
-      {/* Payment Dialog */}
-      <Dialog open={paymentDialog} onOpenChange={setPaymentDialog}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-center">扫码支付 ¥{plan.price}</DialogTitle>
-            <DialogDescription className="text-center">
-              {paymentMethod === 'wechat' ? '请使用微信扫描二维码' : '请使用支付宝扫描二维码'}
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="flex flex-col items-center space-y-4 py-4">
-            {/* QR Code */}
-            <div className="w-64 h-64 border-2 border-gray-200 rounded-lg flex items-center justify-center bg-gray-50">
-              {orderInfo?.qrCodeUrl ? (
-                <img
-                  src={orderInfo.qrCodeUrl}
-                  alt="支付二维码"
-                  className="w-full h-full object-contain p-2"
-                />
-              ) : (
-                <div className="text-center p-4">
-                  <QrCode className="h-16 w-16 text-gray-300 mx-auto mb-2" />
-                  <p className="text-sm text-gray-500">
-                    {paymentConfig?.mode === 'qrcode'
-                      ? '管理员尚未配置收款二维码，请联系管理员。'
-                      : '二维码生成中...'}
-                  </p>
-                  {orderInfo?.orderId && (
-                    <p className="text-xs text-gray-400 mt-2">订单号: {orderInfo.orderId}</p>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Order Info */}
-            <div className="text-center space-y-1 w-full">
-              <p className="text-lg font-semibold text-primary">{plan.name}</p>
-              <p className="text-2xl font-bold">¥{plan.price}</p>
-              {orderInfo?.orderId && (
-                <p className="text-xs text-gray-400">订单号: {orderInfo.orderId}</p>
-              )}
-            </div>
-
-            {/* Payment Instructions */}
-            <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 w-full text-sm text-blue-700">
-              <p>1. 使用{paymentMethod === 'wechat' ? '微信' : '支付宝'}扫描上方二维码</p>
-              <p>2. 支付金额：<strong>¥{plan.price}</strong></p>
-              <p>3. 支付完成后，点击下方按钮确认</p>
-            </div>
-
-            {/* Confirm Button */}
-            <Button
-              className="w-full"
-              size="lg"
-              onClick={handleConfirmPayment}
-              disabled={confirming}
-            >
-              {confirming ? (
-                <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> 确认中...</>
-              ) : (
-                <><Check className="mr-2 h-4 w-4" /> 我已支付，确认激活</>
-              )}
-            </Button>
-
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setPaymentDialog(false)}
-              className="text-gray-400"
-            >
-              取消
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

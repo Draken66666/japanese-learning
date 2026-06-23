@@ -16,7 +16,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
-  const [token, setToken] = useState<string | null>(localStorage.getItem('token'));
+  const [token, setToken] = useState<string | null>(localStorage.getItem('jl_token'));
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -24,7 +24,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       api.getCurrentUser()
         .then(data => {
           if (data.user) {
-            setUser(data.user ?? null);
+            setUser(data.user);
           } else {
             logout();
           }
@@ -39,7 +39,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const login = async (email: string, password: string): Promise<boolean> => {
     const data = await api.login(email, password);
     if (data.success && data.token) {
-      localStorage.setItem('token', data.token);
+      localStorage.setItem('jl_token', data.token);
       setToken(data.token);
       setUser(data.user ?? null);
       return true;
@@ -50,7 +50,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const register = async (email: string, password: string, name?: string): Promise<boolean> => {
     const data = await api.register(email, password, name);
     if (data.success && data.token) {
-      localStorage.setItem('token', data.token);
+      localStorage.setItem('jl_token', data.token);
       setToken(data.token);
       setUser(data.user ?? null);
       return true;
@@ -59,7 +59,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const logout = () => {
-    localStorage.removeItem('token');
+    localStorage.removeItem('jl_token');
     setToken(null);
     setUser(null);
   };
