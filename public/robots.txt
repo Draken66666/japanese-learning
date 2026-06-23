@@ -1,0 +1,25 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+
+# 百度爬虫
+User-agent: Baiduspider
+Allow: /
+
+# 360搜索爬虫
+User-agent: 360Spider
+Allow: /
+
+# 搜狗爬虫
+User-agent: Sogou web spider
+Allow: /
+
+# 神马爬虫
+User-agent: YisouSpider
+Allow: /
+
+# 必应爬虫
+User-agent: bingbot
+Allow: /
+
+Sitemap: /sitemap.xml
