@@ -32,7 +32,7 @@ const STORAGE_KEYS = {
 };
 
 // 激活码（用户可通过此码解锁会员）
-const PREMIUM_ACTIVATION_CODE = 'JPLEARN2026';
+const PREMIUM_ACTIVATION_CODE = 'UVG8GTPGUV3Q';
 
 // Simple hash for password (not secure, but sufficient for local-only auth)
 const simpleHash = (str: string): string => {

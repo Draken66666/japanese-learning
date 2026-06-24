@@ -4,12 +4,35 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Search, Star, BookOpen, ChevronLeft, ChevronRight, Lock } from 'lucide-react';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Search, Star, BookOpen, ChevronLeft, ChevronRight, Lock, Volume2, BookMarked, Languages, Lightbulb } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { api } from '@/services/api';
 import { toast } from 'sonner';
 import type { VocabularyWord } from '@/types';
 import { Link } from 'react-router-dom';
+
+// TTS: preload Japanese voice
+let japaneseVoice: SpeechSynthesisVoice | null = null;
+
+function loadJapaneseVoice(): SpeechSynthesisVoice | null {
+  if (typeof window === 'undefined' || !('speechSynthesis' in window)) return null;
+  const voices = window.speechSynthesis.getVoices();
+  const jaVoice = voices.find(v => v.lang === 'ja-JP' || v.lang.startsWith('ja'));
+  return jaVoice || null;
+}
+
+if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+  japaneseVoice = loadJapaneseVoice();
+  window.speechSynthesis.onvoiceschanged = () => {
+    japaneseVoice = loadJapaneseVoice();
+  };
+}
 
 export default function VocabularyListPage() {
   const { user } = useAuth();
@@ -23,6 +46,7 @@ export default function VocabularyListPage() {
   const [total, setTotal] = useState(0);
   const [categories, setCategories] = useState<string[]>([]);
   const [favoriteIds, setFavoriteIds] = useState<Set<number>>(new Set());
+  const [selectedWord, setSelectedWord] = useState<VocabularyWord | null>(null);
 
   const pageSize = 24;
 
@@ -122,13 +146,42 @@ export default function VocabularyListPage() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  // Speak Japanese word using browser TTS
+  const speak = (text: string) => {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+      toast.error('您的浏览器不支持语音播放');
+      return;
+    }
+    window.speechSynthesis.cancel();
+    if (!japaneseVoice) {
+      japaneseVoice = loadJapaneseVoice();
+    }
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'ja-JP';
+    utterance.rate = 0.8;
+    utterance.volume = 1;
+    if (japaneseVoice) {
+      utterance.voice = japaneseVoice;
+    }
+    utterance.onerror = (e) => {
+      console.error('TTS error:', e);
+    };
+    setTimeout(() => {
+      try {
+        window.speechSynthesis.speak(utterance);
+      } catch (err) {
+        console.error('TTS speak error:', err);
+      }
+    }, 100);
+  };
+
   return (
     <div className="max-w-6xl mx-auto space-y-6 page-enter">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold">词汇浏览</h1>
-          <p className="text-gray-500 mt-1">共 {total} 个词汇</p>
+          <p className="text-gray-500 mt-1">共 {total} 个词汇 · 点击单词查看详情</p>
         </div>
         <Button asChild variant="outline">
           <Link to="/vocabulary">
@@ -203,7 +256,11 @@ export default function VocabularyListPage() {
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {words.map((word) => (
-              <Card key={word.id} className="card-hover-effect group relative">
+              <Card
+                key={word.id}
+                className="card-hover-effect group relative cursor-pointer"
+                onClick={() => setSelectedWord(word)}
+              >
                 <CardContent className="pt-4 pb-3 px-4">
                   <div className="flex items-start justify-between mb-2">
                     <div className="flex gap-2">
@@ -212,7 +269,10 @@ export default function VocabularyListPage() {
                     </div>
                     {user && (
                       <button
-                        onClick={() => handleToggleFavorite(word.id)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleToggleFavorite(word.id);
+                        }}
                         className="opacity-60 group-hover:opacity-100 transition-opacity"
                       >
                         <Star
@@ -226,24 +286,28 @@ export default function VocabularyListPage() {
                     )}
                   </div>
 
-                  <div className="mb-2">
+                  <div className="mb-2 flex items-center gap-2">
                     <span className="text-2xl font-bold text-gray-900">{word.japanese}</span>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        speak(word.japanese);
+                      }}
+                      className="opacity-0 group-hover:opacity-100 transition-opacity text-blue-500 hover:text-blue-600"
+                      title="点击发音"
+                    >
+                      <Volume2 className="h-4 w-4" />
+                    </button>
                   </div>
                   <div className="text-sm text-gray-500 mb-1">{word.hiragana}</div>
                   <div className="text-xs text-blue-500 mb-2">{word.romaji}</div>
                   <div className="text-sm font-medium text-gray-700">
                     {word.meaning_zh || word.meaning_en}
                   </div>
-                  {word.meaning_zh && word.meaning_zh !== word.meaning_en && (
-                    <div className="text-xs text-gray-400 mt-1">{word.meaning_en}</div>
-                  )}
 
                   {word.example_sentence && (
                     <div className="mt-3 pt-3 border-t border-gray-100">
-                      <p className="text-xs text-gray-600">{word.example_sentence}</p>
-                      {word.example_translation && (
-                        <p className="text-xs text-gray-400 mt-1">{word.example_translation}</p>
-                      )}
+                      <p className="text-xs text-gray-600 line-clamp-2">{word.example_sentence}</p>
                     </div>
                   )}
                 </CardContent>
@@ -279,6 +343,125 @@ export default function VocabularyListPage() {
           )}
         </>
       )}
+
+      {/* Word Detail Dialog */}
+      <Dialog open={!!selectedWord} onOpenChange={(open) => !open && setSelectedWord(null)}>
+        <DialogContent className="sm:max-w-lg">
+          {selectedWord && (
+            <>
+              <DialogHeader>
+                <DialogTitle className="sr-only">单词详情</DialogTitle>
+              </DialogHeader>
+
+              {/* Word Header */}
+              <div className="flex items-start justify-between">
+                <div>
+                  <div className="flex items-center gap-3 mb-2">
+                    <span className="text-4xl font-bold text-gray-900">{selectedWord.japanese}</span>
+                    <button
+                      onClick={() => speak(selectedWord.japanese)}
+                      className="text-blue-500 hover:text-blue-600 transition-colors"
+                      title="点击发音"
+                    >
+                      <Volume2 className="h-6 w-6" />
+                    </button>
+                  </div>
+                  {selectedWord.hiragana && (
+                    <p className="text-lg text-gray-500">{selectedWord.hiragana}</p>
+                  )}
+                  <p className="text-sm text-blue-500 mt-1">{selectedWord.romaji}</p>
+                </div>
+                <div className="flex flex-col gap-2 items-end">
+                  <div className="flex gap-2">
+                    <Badge variant="secondary">{selectedWord.jlpt_level}</Badge>
+                    <Badge variant="outline">{selectedWord.category}</Badge>
+                  </div>
+                  {user && (
+                    <button
+                      onClick={() => handleToggleFavorite(selectedWord.id)}
+                      className="text-sm flex items-center gap-1 text-gray-500 hover:text-yellow-500 transition-colors"
+                    >
+                      <Star
+                        className={`h-4 w-4 ${
+                          favoriteIds.has(selectedWord.id)
+                            ? 'fill-yellow-400 text-yellow-400'
+                            : ''
+                        }`}
+                      />
+                      {favoriteIds.has(selectedWord.id) ? '已收藏' : '收藏'}
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Meaning Section */}
+              <div className="space-y-3">
+                {selectedWord.meaning_zh && (
+                  <div className="bg-blue-50 rounded-lg p-3">
+                    <div className="flex items-center gap-2 text-xs text-blue-600 font-semibold mb-1">
+                      <Languages className="h-3.5 w-3.5" />
+                      中文释义
+                    </div>
+                    <p className="text-gray-800">{selectedWord.meaning_zh}</p>
+                  </div>
+                )}
+
+                {selectedWord.meaning_en && (
+                  <div className="bg-gray-50 rounded-lg p-3">
+                    <div className="flex items-center gap-2 text-xs text-gray-500 font-semibold mb-1">
+                      <BookMarked className="h-3.5 w-3.5" />
+                      English
+                    </div>
+                    <p className="text-gray-600 text-sm">{selectedWord.meaning_en}</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Example Sentence */}
+              {selectedWord.example_sentence && (
+                <div className="bg-amber-50 rounded-lg p-4">
+                  <div className="flex items-center gap-2 text-xs text-amber-700 font-semibold mb-2">
+                    <Lightbulb className="h-3.5 w-3.5" />
+                    例句
+                  </div>
+                  <div className="flex items-start gap-2 mb-2">
+                    <p className="text-gray-800 text-lg leading-relaxed flex-1">
+                      {selectedWord.example_sentence}
+                    </p>
+                    <button
+                      onClick={() => speak(selectedWord.example_sentence!)}
+                      className="text-blue-500 hover:text-blue-600 transition-colors shrink-0 mt-1"
+                      title="朗读例句"
+                    >
+                      <Volume2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                  {selectedWord.example_translation && (
+                    <p className="text-gray-500 text-sm">{selectedWord.example_translation}</p>
+                  )}
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div className="flex gap-2 pt-2">
+                <Button asChild className="flex-1">
+                  <Link to="/vocabulary">
+                    <BookOpen className="mr-2 h-4 w-4" />
+                    闪卡学习
+                  </Link>
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => setSelectedWord(null)}
+                  className="flex-1"
+                >
+                  关闭
+                </Button>
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
