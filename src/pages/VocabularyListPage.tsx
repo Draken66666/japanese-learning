@@ -10,7 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Search, Star, BookOpen, ChevronLeft, ChevronRight, Lock, Volume2, BookMarked, Languages, Lightbulb } from 'lucide-react';
+import { Search, Star, BookOpen, ChevronLeft, ChevronRight, Lock, Volume2, BookMarked, Languages, Lightbulb, AlertCircle } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { api } from '@/services/api';
 import { toast } from 'sonner';
@@ -19,6 +19,7 @@ import { Link } from 'react-router-dom';
 
 // TTS: preload Japanese voice
 let japaneseVoice: SpeechSynthesisVoice | null = null;
+let ttsWarned = false;
 
 function loadJapaneseVoice(): SpeechSynthesisVoice | null {
   if (typeof window === 'undefined' || !('speechSynthesis' in window)) return null;
@@ -27,11 +28,23 @@ function loadJapaneseVoice(): SpeechSynthesisVoice | null {
   return jaVoice || null;
 }
 
+function hasJapaneseVoice(): boolean {
+  if (typeof window === 'undefined' || !('speechSynthesis' in window)) return false;
+  const voices = window.speechSynthesis.getVoices();
+  return voices.some(v => v.lang === 'ja-JP' || v.lang.startsWith('ja'));
+}
+
 if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
   japaneseVoice = loadJapaneseVoice();
   window.speechSynthesis.onvoiceschanged = () => {
     japaneseVoice = loadJapaneseVoice();
   };
+}
+
+// 格式化释义：多个意思分行显示
+function formatMeaning(meaning: string | undefined): string[] {
+  if (!meaning) return [];
+  return meaning.split(/[,;，；]/).map(s => s.trim()).filter(s => s);
 }
 
 export default function VocabularyListPage() {
@@ -47,8 +60,26 @@ export default function VocabularyListPage() {
   const [categories, setCategories] = useState<string[]>([]);
   const [favoriteIds, setFavoriteIds] = useState<Set<number>>(new Set());
   const [selectedWord, setSelectedWord] = useState<VocabularyWord | null>(null);
+  const [showTTSWarning, setShowTTSWarning] = useState(false);
 
   const pageSize = 24;
+
+  // 检查日语语音是否可用
+  useEffect(() => {
+    const checkVoice = () => {
+      const available = hasJapaneseVoice();
+      setShowTTSWarning(!available);
+    };
+    checkVoice();
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.onvoiceschanged = () => {
+        japaneseVoice = loadJapaneseVoice();
+        checkVoice();
+      };
+    }
+    const timer = setTimeout(checkVoice, 1000);
+    return () => clearTimeout(timer);
+  }, []);
 
   const loadCategories = async () => {
     try {
@@ -152,10 +183,18 @@ export default function VocabularyListPage() {
       toast.error('您的浏览器不支持语音播放');
       return;
     }
-    window.speechSynthesis.cancel();
+    // 检查日语语音
     if (!japaneseVoice) {
       japaneseVoice = loadJapaneseVoice();
     }
+    if (!japaneseVoice && !ttsWarned) {
+      ttsWarned = true;
+      toast.warning('未检测到日语语音包，请安装日语语音包后使用发音功能', {
+        duration: 8000,
+        description: 'Chrome/Edge: 设置→语言→添加日语 | Windows: 设置→时间和语言→语言→添加日语',
+      });
+    }
+    window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = 'ja-JP';
     utterance.rate = 0.8;
@@ -242,6 +281,31 @@ export default function VocabularyListPage() {
         </div>
       )}
 
+      {/* TTS Voice Pack Warning */}
+      {showTTSWarning && (
+        <div className="bg-amber-50 border border-amber-300 rounded-lg p-4 text-sm">
+          <div className="flex items-start gap-2">
+            <AlertCircle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="font-semibold text-amber-800 mb-1">未检测到日语语音包</p>
+              <p className="text-amber-700 mb-2">发音功能需要日语语音包支持。请按以下步骤安装：</p>
+              <ul className="text-amber-700 space-y-1 ml-4 list-disc">
+                <li><strong>Chrome / Edge 浏览器</strong>：设置 → 语言 → 添加"日语" → 重启浏览器</li>
+                <li><strong>Windows 系统</strong>：设置 → 时间和语言 → 语言 → 添加日语 → 下载语音包</li>
+                <li><strong>macOS 系统</strong>：系统偏好设置 → 辅助功能 → 语音 → 系统语音 → 选择"Kyoko"</li>
+              </ul>
+              <p className="text-amber-600 mt-2 text-xs">安装完成后刷新页面即可使用发音功能</p>
+              <button
+                onClick={() => setShowTTSWarning(false)}
+                className="text-amber-600 hover:text-amber-800 text-xs underline mt-1"
+              >
+                关闭提示
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Vocabulary Grid */}
       {loading ? (
         <div className="flex items-center justify-center min-h-[40vh]">
@@ -302,7 +366,9 @@ export default function VocabularyListPage() {
                   <div className="text-sm text-gray-500 mb-1">{word.hiragana}</div>
                   <div className="text-xs text-blue-500 mb-2">{word.romaji}</div>
                   <div className="text-sm font-medium text-gray-700">
-                    {word.meaning_zh || word.meaning_en}
+                    {formatMeaning(word.meaning_zh || word.meaning_en).map((part, i) => (
+                      <span key={i} className="block py-0.5">{part}</span>
+                    ))}
                   </div>
 
                   {word.example_sentence && (
@@ -402,7 +468,11 @@ export default function VocabularyListPage() {
                       <Languages className="h-3.5 w-3.5" />
                       中文释义
                     </div>
-                    <p className="text-gray-800">{selectedWord.meaning_zh}</p>
+                    <div className="text-gray-800 space-y-1">
+                      {formatMeaning(selectedWord.meaning_zh).map((part, i) => (
+                        <div key={i} className="leading-relaxed">{part}</div>
+                      ))}
+                    </div>
                   </div>
                 )}
 
@@ -412,7 +482,11 @@ export default function VocabularyListPage() {
                       <BookMarked className="h-3.5 w-3.5" />
                       English
                     </div>
-                    <p className="text-gray-600 text-sm">{selectedWord.meaning_en}</p>
+                    <div className="text-gray-600 text-sm space-y-1">
+                      {formatMeaning(selectedWord.meaning_en).map((part, i) => (
+                        <div key={i} className="leading-relaxed">{part}</div>
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>

@@ -14,12 +14,21 @@ import {
   EyeOff,
   BookOpen,
   Volume2,
-  Shuffle
+  Shuffle,
+  AlertCircle
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { api } from '@/services/api';
 import { toast } from 'sonner';
 import type { VocabularyWord } from '@/types';
+
+// 检查是否有日语语音引擎
+let ttsWarned = false;
+function hasJapaneseVoice(): boolean {
+  if (typeof window === 'undefined' || !('speechSynthesis' in window)) return false;
+  const voices = window.speechSynthesis.getVoices();
+  return voices.some(v => v.lang === 'ja-JP' || v.lang.startsWith('ja'));
+}
 
 // 标准化罗马音：处理 ō/ō → ou, ā → aa 等变体
 function normalizeRomaji(s: string): string {
@@ -60,17 +69,29 @@ if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
 
 function speakJapanese(text: string) {
   if (!('speechSynthesis' in window)) {
-    console.warn('Speech synthesis not supported');
+    toast.error('您的浏览器不支持语音播放');
     return;
+  }
+
+  // 检查是否有日语语音
+  if (!japaneseVoice) {
+    japaneseVoice = loadJapaneseVoice();
+  }
+
+  // 如果仍然没有日语语音，提示用户下载
+  if (!japaneseVoice && !ttsWarned) {
+    ttsWarned = true;
+    toast.warning(
+      '未检测到日语语音包，发音功能可能无法正常工作。请安装日语语音包：',
+      {
+        duration: 8000,
+        description: 'Chrome: 设置 → 语言 → 添加日语 | Edge: 设置 → 语言 → 添加日语 | Windows: 设置 → 时间和语言 → 语言 → 添加日语',
+      }
+    );
   }
 
   // 取消之前的朗读
   window.speechSynthesis.cancel();
-
-  // 确保语音引擎已加载
-  if (!japaneseVoice) {
-    japaneseVoice = loadJapaneseVoice();
-  }
 
   const utterance = new SpeechSynthesisUtterance(text);
   utterance.lang = 'ja-JP';
@@ -109,8 +130,29 @@ export default function VocabularyPage() {
   const [showRomajiInput, setShowRomajiInput] = useState(false);
   const [isCorrect, setIsCorrect] = useState<boolean | null>(null);
   const [autoSpeak, setAutoSpeak] = useState(true);
+  const [showTTSWarning, setShowTTSWarning] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const advanceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // 检查日语语音是否可用
+  useEffect(() => {
+    const checkVoice = () => {
+      const available = hasJapaneseVoice();
+      setShowTTSWarning(!available);
+    };
+    // 初始检查
+    checkVoice();
+    // voiceschanged 后重新检查
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.onvoiceschanged = () => {
+        japaneseVoice = loadJapaneseVoice();
+        checkVoice();
+      };
+    }
+    // 延迟再次检查（某些浏览器需要时间加载）
+    const timer = setTimeout(checkVoice, 1000);
+    return () => clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     loadVocabulary();
@@ -349,6 +391,33 @@ export default function VocabularyPage() {
         </div>
       </div>
 
+      {/* TTS Voice Pack Warning */}
+      {showTTSWarning && (
+        <div className="bg-amber-50 border border-amber-300 rounded-lg p-4 text-sm">
+          <div className="flex items-start gap-2">
+            <AlertCircle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="font-semibold text-amber-800 mb-1">未检测到日语语音包</p>
+              <p className="text-amber-700 mb-2">发音功能需要日语语音包支持。请按以下步骤安装：</p>
+              <ul className="text-amber-700 space-y-1 ml-4 list-disc">
+                <li><strong>Chrome / Edge 浏览器</strong>：设置 → 语言 → 添加"日语" → 重启浏览器</li>
+                <li><strong>Windows 系统</strong>：设置 → 时间和语言 → 语言 → 添加日语 → 下载语音包</li>
+                <li><strong>macOS 系统</strong>：系统偏好设置 → 辅助功能 → 语音 → 系统语音 → 选择"Kyoko"</li>
+              </ul>
+              <p className="text-amber-600 mt-2 text-xs">
+                安装完成后刷新页面即可使用发音功能
+              </p>
+              <button
+                onClick={() => setShowTTSWarning(false)}
+                className="text-amber-600 hover:text-amber-800 text-xs underline mt-1"
+              >
+                关闭提示
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Progress */}
       <div className="space-y-2">
         <div className="flex justify-between text-sm text-gray-600">
@@ -478,7 +547,11 @@ export default function VocabularyPage() {
                 
                 <div className="bg-blue-50 rounded-lg px-4 py-3 inline-block">
                   <p className="text-sm text-gray-500 mb-1">中文释义</p>
-                  <p className="text-2xl font-semibold">{currentWord.meaning_zh || currentWord.meaning_en}</p>
+                  <div className="text-2xl font-semibold space-y-1">
+                    {(currentWord.meaning_zh || currentWord.meaning_en || '').split(/[,;，；]/).filter((s: string) => s.trim()).map((part: string, i: number) => (
+                      <div key={i} className="leading-relaxed">{part.trim()}</div>
+                    ))}
+                  </div>
                 </div>
                 
                 {currentWord.meaning_en && currentWord.meaning_z && (
